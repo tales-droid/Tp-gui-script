@@ -3,23 +3,29 @@ local Player = game.Players.LocalPlayer
 local Character = Player.Character or Player.CharacterAdded:Wait()
 local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 
-local savedPosition = nil
+local savedPosition = nil -- Posição do teletransporte
+local savedGUIPosition = UDim2.new(0.5, -110, 0.5, -40) -- Posição inicial padrão da GUI
 
 -- Variáveis para o sistema de arrastar
 local isDragging = false
-local dragStartPos = Vector2.new(0, 0)
-local initialFramePos = UDim2.new(0, 0, 0, 0)
+local dragOffset = Vector2.new(0, 0) -- Offset do clique em relação ao canto da GUI
+local UserInputService = game:GetService("UserInputService")
 
 -- Função para criar a GUI
 local function createGUI()
+    -- Verifica se a GUI já existe no PlayerGui para evitar duplicação
+    if Player.PlayerGui:FindFirstChild("TeleportGUI") then
+        Player.PlayerGui.TeleportGUI:Destroy() -- Destrói a antiga antes de criar uma nova
+    end
+
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "TeleportGUI"
-    ScreenGui.Parent = Player:WaitForChild("PlayerGui")
+    ScreenGui.Parent = Player:WaitForChild("PlayerGui") 
 
     -- Frame principal (fundo preto)
     local MainFrame = Instance.new("Frame")
     MainFrame.Size = UDim2.new(0, 220, 0, 80) -- Tamanho ajustado para caber tudo
-    MainFrame.Position = UDim2.new(0.5, -110, 0.5, -40) -- Posição inicial centralizada
+    MainFrame.Position = savedGUIPosition -- Usa a última posição salva
     MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20) -- Fundo preto
     MainFrame.BorderColor3 = Color3.fromRGB(10, 10, 10)
     MainFrame.BorderSizePixel = 2
@@ -79,71 +85,91 @@ local function createGUI()
     TeleportButton.Parent = ButtonsFrame
 
     -- --- Lógica de Arrastar a GUI ---
-    local UserInputService = game:GetService("UserInputService")
-
-    -- Quando o mouse/toque pressiona a barra de título
     TitleBar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             isDragging = true
-            dragStartPos = UserInputService:GetMouseLocation()
-            initialFramePos = MainFrame.Position
+            dragOffset = UserInputService:GetMouseLocation() - MainFrame.AbsolutePosition
+            MainFrame.ZIndex = 10
         end
     end)
 
-    -- Enquanto o mouse/toque se move
     UserInputService.InputChanged:Connect(function(input)
         if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local currentMousePos = UserInputService:GetMouseLocation()
-            local delta = currentMousePos - dragStartPos
-
-            local newX = initialFramePos.X.Offset + delta.X
-            local newY = initialFramePos.Y.Offset + delta.Y
-
-            MainFrame.Position = UDim2.new(0, newX, 0, newY)
+            local newPosition = currentMousePos - dragOffset
+            MainFrame.Position = UDim2.new(0, newPosition.X, 0, newPosition.Y)
         end
     end)
 
-    -- Quando o mouse/toque é liberado
-    UserInputService.InputEnded:Connect(function(input)
+    TitleBar.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             isDragging = false
+            MainFrame.ZIndex = 1
+            -- SALVA A POSIÇÃO DA GUI AQUI
+            savedGUIPosition = MainFrame.Position
         end
     end)
 
     -- --- Lógica de Texto Rainbow ---
-    local hue = 0 -- Começa em 0 (vermelho)
-    task.spawn(function() -- Usamos task.spawn para não bloquear o resto do script
+    local hue = 0
+    task.spawn(function()
         while true do
-            TitleLabel.TextColor3 = Color3.fromHSV(hue, 1, 1) -- Hue varia, Saturation e Value ficam em 1
-            hue = hue + 0.01 -- Pequeno incremento para transição suave
+            TitleLabel.TextColor3 = Color3.fromHSV(hue, 1, 1)
+            hue = hue + 0.01
             if hue >= 1 then
-                hue = 0 -- Reinicia o ciclo de cores quando atinge o fim
+                hue = 0
             end
-            task.wait(0.01) -- Pequena pausa para a transição ser visível
+            task.wait(0.01)
         end
     end)
 
-    -- --- Conecta as funções dos botões (inalterado) ---
+    -- --- Conecta as funções dos botões ---
     SetButton.MouseButton1Click:Connect(function()
+        -- Atualiza Character e HumanoidRootPart caso o personagem tenha sido recriado
+        Character = Player.Character or Player.CharacterAdded:Wait()
+        HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+
         savedPosition = HumanoidRootPart.CFrame
-        SetButton.Text = "SET!" -- Feedback visual
+        SetButton.Text = "SET!"
         task.wait(0.5)
         SetButton.Text = "Set"
     end)
 
     TeleportButton.MouseButton1Click:Connect(function()
+        -- Atualiza Character e HumanoidRootPart caso o personagem tenha sido recriado
+        Character = Player.Character or Player.CharacterAdded:Wait()
+        HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+        
         if savedPosition then
             HumanoidRootPart.CFrame = savedPosition
-            TeleportButton.Text = "TP!" -- Feedback visual
+            TeleportButton.Text = "TP!"
             task.wait(0.5)
             TeleportButton.Text = "TP"
         else
-            TeleportButton.Text = "ERRO!" -- Feedback visual
+            TeleportButton.Text = "ERRO!"
             task.wait(0.5)
             TeleportButton.Text = "TP"
         end
     end)
 end
 
--- Chama a função para criar a GUI
+-- --- Lógica para recriar a GUI após a morte/reset ---
+Player.CharacterAdded:Connect(function(newCharacter)
+    Character = newCharacter
+    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+    
+    -- Pequeno atraso para garantir que o PlayerGui esteja pronto
+    task.wait(0.1) 
+    createGUI()
+end)
+
+-- Chama a função para criar a GUI pela primeira vez
 createGUI()
+
+-- A parte abaixo foi REMOVIDA:
+-- local discordLink = "coloque_o_link_do_seu_discord_aqui"
+-- game.StarterGui:SetCore("SendNotification", {
+--     Title = "Script Carregado!",
+--     Text = "created by tali098766, para mais scripts, junte-se ao meu Discord: " .. discordLink,
+--     Duration = 5,
+-- })
